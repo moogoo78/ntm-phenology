@@ -36,6 +36,29 @@ docker compose ps                              # STATUS shows "(healthy)"
 
 Edit `common_names.json` on the host, then `docker compose restart` to pick it up — no rebuild.
 
+## 1b. Behind an existing Traefik (no host port)
+
+If the host already runs Traefik (docker provider) — e.g. alongside the galaxy-catalog
+stack — use the `compose.traefik.yml` override instead of publishing a port. Traefik
+reaches the app over its shared network and issues TLS automatically.
+
+`.env` needs the public hostname (DNS must resolve to the host; with a Cloudflare
+DNS-challenge resolver the record must live in that Cloudflare account):
+
+```ini
+NTM_HOST=phenology.example.org
+NTM_DB_FILE=/root/ntm-phenology/ntmPhenology.duckdb
+```
+
+```bash
+docker compose -f docker-compose.yml -f compose.traefik.yml up -d --build
+```
+
+The override joins the external `galaxy-catalog_default` network and adds
+`traefik.*` labels (router `ntm`, `websecure` entrypoint, `myresolver` cert,
+service port 8000). Adjust the network name in `compose.traefik.yml` if your
+Traefik lives on a different network.
+
 ## 2. Alternative: plain `docker run`
 
 ```bash
