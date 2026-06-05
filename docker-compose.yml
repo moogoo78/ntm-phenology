@@ -1,0 +1,19 @@
+# Production run config. Build + run with:  docker compose up -d --build
+# The DuckDB file and common_names.json are mounted read-only from the host,
+# so you update data/labels without rebuilding the image. Override the host
+# paths via a .env file (NTM_DB_FILE, NTM_COMMON_NAMES_FILE) or env vars.
+services:
+  app:
+    build: .
+    image: ntm-phenology
+    container_name: ntm-phenology
+    restart: unless-stopped
+    # Bind to localhost; front it with your own reverse proxy (see DEPLOY.md).
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ${NTM_DB_FILE:-./ntmPhenology.duckdb}:/data/ntmPhenology.duckdb:ro
+      - ${NTM_COMMON_NAMES_FILE:-./common_names.json}:/app/common_names.json:ro
+    # NTM_DB_PATH is already set in the Dockerfile; the HEALTHCHECK is inherited
+    # from the image. Tune worker count by overriding the command if needed:
+    # command: ["gunicorn","-w","6","-k","gthread","--threads","2","-b","0.0.0.0:8000","--access-logfile","-","app:app"]

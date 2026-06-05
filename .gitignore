@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+*.log
+*.png
+.env
+
+# Data files are supplied on the host (volume-mounted), not committed.
+*.duckdb
+*.csv
+
+# Scratch analysis notebook (6+ MB of embedded data outputs) — kept out of the
+# "code only" repo. Add back deliberately (clear outputs first) if you want it.
+analysis-script.ipynb

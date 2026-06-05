@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NTM Phenology · DEMO · 國立臺灣博物館物候</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <script src="{{ url_for('static', filename='vendor/echarts.min.js') }}"></script>
+</head>
+<body>
+  <header>
+    <h1>NTM Phenology <span class="zh">物候觀測</span> <span class="badge">DEMO</span></h1>
+    <p class="sub">iNaturalist monitoring · 二二八公園 / 南門園區 · 2018–2025 · sandbox copy of <a href="/">the main page</a></p>
+  </header>
+
+  <section class="filters">
+    <label>Species 物種
+      <input id="species" list="species-list" placeholder="All species — type to search">
+      <datalist id="species-list"></datalist>
+    </label>
+    <label>Site 地點
+      <select id="site">
+        <option value="">All sites</option>
+        <option value="二二八公園">二二八公園 (228 Park)</option>
+        <option value="南門園區">南門園區 (Nanmen)</option>
+        <option value="未指定">未指定 (Unspecified)</option>
+      </select>
+    </label>
+    <label>From 起
+      <select id="from_year"></select>
+    </label>
+    <label>To 迄
+      <select id="to_year"></select>
+    </label>
+    <button id="reset">Reset</button>
+  </section>
+
+  <section class="cards" id="cards"></section>
+
+  <section class="chart-block">
+    <h2>Phenology calendar <span class="zh">物候曆</span></h2>
+    <p class="hint" id="pheno-hint">% of assessed observations showing activity, by month.
+      Pick a species above for a single-species curve.</p>
+    <div id="chart-pheno" class="chart"></div>
+    <h3>Phenophase detail <span class="zh">物候階段明細</span></h3>
+    <div class="seg" id="pheno-seg">
+      <button data-k="flower" class="active">Flower 花</button>
+      <button data-k="fruit">Fruit 果</button>
+      <button data-k="leaf">Leaf 葉</button>
+    </div>
+    <div id="chart-pheno-detail" class="chart"></div>
+  </section>
+
+  <section class="chart-block">
+    <h2>一棵樹的一年故事 <span class="zh">Individual tree story</span></h2>
+    <label class="inline">Tree 個體
+      <select id="tree"></select>
+    </label>
+    <div id="chart-tree" class="chart" style="height:420px"></div>
+  </section>
+
+  <section class="chart-block">
+    <h2>每年觀察紀錄 <span class="zh">Annual records by site</span></h2>
+    <div id="chart-yearly" class="chart"></div>
+  </section>
+
+  <section class="chart-block">
+    <h2>Observations over time <span class="zh">觀測時序</span></h2>
+    <label class="inline"><input type="checkbox" id="split-site"> Split by site 依地點分色</label>
+    <div id="chart-obs" class="chart"></div>
+  </section>
+
+  <section class="chart-block">
+    <h2>Site &amp; species summary <span class="zh">地點與物種總覽</span></h2>
+    <div class="row">
+      <div id="chart-site" class="chart half"></div>
+      <div id="chart-top" class="chart half"></div>
+    </div>
+  </section>
+
+  <footer>Data: NTM phenology combine (107-1 ~ 114-1). Built from ntmPhenology.duckdb.</footer>
+
+  <script src="{{ url_for('static', filename='demo.js') }}"></script>
+</body>
+</html>
