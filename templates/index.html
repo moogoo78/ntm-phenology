@@ -13,72 +13,137 @@
     <p class="sub">iNaturalist monitoring · 二二八公園 / 南門園區 · 2018–2025</p>
   </header>
 
-  <section class="filters">
-    <label>Species 物種
-      <input id="species" list="species-list" placeholder="All species — type to search">
-      <datalist id="species-list"></datalist>
-    </label>
-    <label>Site 地點
-      <select id="site">
-        <option value="">All sites</option>
-        <option value="二二八公園">二二八公園 (228 Park)</option>
-        <option value="南門園區">南門園區 (Nanmen)</option>
-        <option value="未指定">未指定 (Unspecified)</option>
-      </select>
-    </label>
-    <label>From 起
-      <select id="from_year"></select>
-    </label>
-    <label>To 迄
-      <select id="to_year"></select>
-    </label>
-    <button id="reset">Reset</button>
-  </section>
+  <nav class="tabs" id="tabs">
+    <button data-tab="t1" class="active">1 · 資料概況</button>
+    <button data-tab="t2">2 · 一棵樹的一年</button>
+    <button data-tab="t3">3 · 物候月曆</button>
+    <button data-tab="t4">4 · 跨年度趨勢</button>
+    <button data-tab="t5">5 · 跨樣區比較</button>
+    <button data-tab="t6">6 · 初花日 FFD</button>
+    <button data-tab="t7">7 · 熱帶 vs 溫帶</button>
+    <button data-tab="t8">8 · 特殊物候</button>
+  </nav>
 
   <!-- §1 資料概況 Data Overview -->
-  <section class="chart-block">
-    <h2>1 · 資料概況 <span class="zh">Data Overview</span></h2>
-    <div class="cards" id="cards"></div>
-    <h3>每年觀察紀錄 <span class="zh">Annual records by site</span></h3>
-    <div id="chart-yearly" class="chart"></div>
-    <div class="row">
-      <div id="chart-site" class="chart half"></div>
-      <div class="half">
-        <label class="inline"><input type="checkbox" id="split-site"> 觀測時序 Observations over time — split by site</label>
-        <div id="chart-obs" class="chart"></div>
-      </div>
+  <section class="tab-panel active" id="t1">
+    <div class="filters">
+      <label>Species 物種
+        <input id="species" list="species-list" placeholder="All species — type to search">
+        <datalist id="species-list"></datalist>
+      </label>
+      <label>Site 地點
+        <select id="site">
+          <option value="">All sites</option>
+          <option value="二二八公園">二二八公園 (228 Park)</option>
+          <option value="南門園區">南門園區 (Nanmen)</option>
+          <option value="未指定">未指定 (Unspecified)</option>
+        </select>
+      </label>
+      <label>From 起
+        <select id="from_year"></select>
+      </label>
+      <label>To 迄
+        <select id="to_year"></select>
+      </label>
+      <button id="reset">Reset</button>
     </div>
-    <h3>物種排名 Top 30 <span class="zh">Species ranking</span></h3>
-    <div id="chart-top" class="chart" style="height:640px"></div>
+    <div class="chart-block">
+      <h2>1 · 資料概況 <span class="zh">Data Overview</span></h2>
+      <div class="cards" id="cards"></div>
+      <h3>每年觀察紀錄 <span class="zh">Annual records by site</span></h3>
+      <div id="chart-yearly" class="chart"></div>
+      <div class="row">
+        <div id="chart-site" class="chart half"></div>
+        <div class="half">
+          <label class="inline"><input type="checkbox" id="split-site"> 觀測時序 Observations over time — split by site</label>
+          <div id="chart-obs" class="chart"></div>
+        </div>
+      </div>
+      <h3>物種排名 Top 30 <span class="zh">Species ranking</span></h3>
+      <div id="chart-top" class="chart" style="height:640px"></div>
+    </div>
   </section>
 
   <!-- §2 一棵樹的一年 Individual Tree Story -->
-  <section class="chart-block">
-    <h2>2 · 一棵樹的一年故事 <span class="zh">Individual Tree Story</span></h2>
-    <label class="inline">Tree 個體
-      <select id="tree"></select>
-    </label>
-    <div id="chart-tree" class="chart" style="height:420px"></div>
+  <section class="tab-panel" id="t2">
+    <div class="chart-block">
+      <h2>2 · 一棵樹的一年故事 <span class="zh">Individual Tree Story</span></h2>
+      <label class="inline">Tree 個體
+        <select id="tree"></select>
+      </label>
+      <div id="chart-tree" class="chart" style="height:420px"></div>
+    </div>
   </section>
 
   <!-- §3 物候月曆 Phenology Calendar -->
-  <section class="chart-block">
-    <h2>3 · 物候月曆 <span class="zh">Phenology Calendar</span></h2>
-    <p class="hint">12 representative species × month. A mark appears only past threshold —
-      flowering / fruiting &gt; 30%, new leaf &gt; 15%. Symbol size scales with magnitude.
-      <span style="color:#e1352f">●</span> 開花 Flower ·
-      <span style="color:#e8922f">■</span> 結果 Fruit ·
-      <span style="color:#8cc06f">▲</span> 新葉 New leaf</p>
-    <div id="chart-calendar" class="chart" style="height:520px"></div>
+  <section class="tab-panel" id="t3">
+    <div class="chart-block">
+      <h2>3 · 物候月曆 <span class="zh">Phenology Calendar</span></h2>
+      <p class="hint">12 representative species × month. A mark appears only past threshold —
+        flowering / fruiting &gt; 30%, new leaf &gt; 15%. Symbol size scales with magnitude.
+        <span style="color:#e1352f">●</span> 開花 Flower ·
+        <span style="color:#e8922f">■</span> 結果 Fruit ·
+        <span style="color:#8cc06f">▲</span> 新葉 New leaf</p>
+      <div id="chart-calendar" class="chart" style="height:520px"></div>
+    </div>
   </section>
 
   <!-- §4 跨年度趨勢 Crossed-year Trends -->
-  <section class="chart-block">
-    <h2>4 · 跨年度趨勢 <span class="zh">Crossed-year Trends</span></h2>
-    <p class="hint">山櫻花 (Prunus campanulata) average flowering probability by year × month.
-      Bold-outlined cell = each year's peak month. <code>2021*</code> = sparse data; blank rows
-      = years with observations but no flowering annotation.</p>
-    <div id="chart-trend" class="chart" style="height:380px"></div>
+  <section class="tab-panel" id="t4">
+    <div class="chart-block">
+      <h2>4 · 跨年度趨勢 <span class="zh">Crossed-year Trends</span></h2>
+      <p class="hint">山櫻花 (Prunus campanulata) average flowering probability by year × month.
+        Bold-outlined cell = each year's peak month. <code>2021*</code> = sparse data; blank rows
+        = years with observations but no flowering annotation.</p>
+      <div id="chart-trend" class="chart" style="height:380px"></div>
+    </div>
+  </section>
+
+  <!-- §5 跨樣區比較 Site comparison -->
+  <section class="tab-panel" id="t5">
+    <div class="chart-block">
+      <h2>5 · 跨樣區比較 <span class="zh">Site comparison</span></h2>
+      <p class="hint">同一物種在 <b>二二八公園</b> vs <b>南門園區</b> 的月開花／結果率比較
+        (assessed-fraction by month-of-year). 看兩樣區的物候時序是否一致。</p>
+      <label class="inline">Species 物種
+        <select id="sc-species"></select>
+      </label>
+      <div id="chart-sitecmp" class="chart" style="height:420px"></div>
+    </div>
+  </section>
+
+  <!-- §6 初花日 First Flowering Date -->
+  <section class="tab-panel" id="t6">
+    <div class="chart-block">
+      <h2>6 · 初花日 <span class="zh">First Flowering Date (DOY)</span></h2>
+      <p class="hint">每年最早觀察到 <b>開花</b>（首次花開／花開盛期／花開間期）的日子，以
+        Day-of-Year (DOY) 表示。點越低＝開花越早。<code>*</code> = 該年開花紀錄稀少 (&lt;3)。</p>
+      <label class="inline">Species 物種
+        <select id="ffd-species"></select>
+      </label>
+      <div id="chart-ffd" class="chart" style="height:420px"></div>
+    </div>
+  </section>
+
+  <!-- §7 熱帶 vs 溫帶 Tropical vs Temperate -->
+  <section class="tab-panel" id="t7">
+    <div class="chart-block">
+      <h2>7 · 熱帶 vs 溫帶（落葉） <span class="zh">Tropical vs Temperate</span></h2>
+      <p class="hint">兩組物種的月平均 <b>葉量覆蓋率</b>（落葉樹冬季明顯下降）與 <b>開花率</b> 對比。
+        實線 = 葉量覆蓋率 (%)；虛線 = 開花率 (%)。</p>
+      <div id="chart-group" class="chart" style="height:440px"></div>
+      <p class="hint" id="group-legend"></p>
+    </div>
+  </section>
+
+  <!-- §8 特殊物候 Double flowering -->
+  <section class="tab-panel" id="t8">
+    <div class="chart-block">
+      <h2>8 · 特殊物候：一年兩次開花 <span class="zh">Double-flowering</span></h2>
+      <p class="hint">自動找出 <b>月開花率呈雙峰</b>（兩段花期、中間有間隔）的物種，匯集各年資料。
+        可作為個案報導的候選。每列為一物種，色塊深淺 = 該月開花率，★ = 偵測到的花期高峰月。</p>
+      <div id="chart-double" class="chart" style="height:520px"></div>
+    </div>
   </section>
 
   <footer>Data: NTM phenology combine (107-1 ~ 114-1). Built from ntmPhenology.duckdb.</footer>
