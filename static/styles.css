@@ -29,6 +29,38 @@ header .sub { margin: .25rem 0 0; color: var(--muted); font-size: .9rem; }
   padding: .15rem .45rem; border-radius: 5px; margin-left: .4rem;
 }
 
+/* tab navigation */
+nav.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .3rem;
+  padding: .6rem 1.6rem 0;
+  background: var(--card);
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  z-index: 6;
+}
+nav.tabs button {
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: .88rem;
+  padding: .5rem .7rem;
+  margin-bottom: -1px;
+}
+nav.tabs button:hover { color: var(--ink); border-color: var(--line); }
+nav.tabs button.active {
+  color: var(--accent);
+  font-weight: 700;
+  background: var(--bg);
+  border-color: var(--line);
+}
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
 .filters {
   display: flex;
   flex-wrap: wrap;
@@ -37,9 +69,6 @@ header .sub { margin: .25rem 0 0; color: var(--muted); font-size: .9rem; }
   padding: 1rem 1.6rem;
   background: var(--card);
   border-bottom: 1px solid var(--line);
-  position: sticky;
-  top: 0;
-  z-index: 5;
 }
 .filters label { display: flex; flex-direction: column; font-size: .8rem; color: var(--muted); gap: .25rem; }
 .filters input, .filters select {

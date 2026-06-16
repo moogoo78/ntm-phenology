@@ -289,6 +289,179 @@ async function loadTrend() {
   }, true);
 }
 
+// §5 跨樣區比較 — one species, monthly flower/fruit rate per site (228 vs 南門).
+const SC_COLORS = { "二二八公園": "#2f7d52", "南門園區": "#d8743f" };
+async function initSiteCompare() {
+  const d = await getJSON("/api/site_compare");
+  el("sc-species").innerHTML = d.options
+    .map(o => `<option value="${o.sci}">${o.zh} ${o.sci}</option>`).join("");
+  el("sc-species").value = d.species;
+  loadSiteCompare();
+}
+async function loadSiteCompare() {
+  const sp = el("sc-species").value;
+  const d = await getJSON("/api/site_compare?species=" + encodeURIComponent(sp));
+  const byKey = {};
+  d.rows.forEach(r => { byKey[`${r.site}|${r.m}`] = r; });
+  const series = [];
+  d.sites.forEach(site => {
+    const flower = MONTHS_ZH.map((_, i) => {
+      const r = byKey[`${site}|${i + 1}`];
+      return r && r.flower != null ? Math.round(r.flower * 100) : null;
+    });
+    const fruit = MONTHS_ZH.map((_, i) => {
+      const r = byKey[`${site}|${i + 1}`];
+      return r && r.fruit != null ? Math.round(r.fruit * 100) : null;
+    });
+    const c = SC_COLORS[site] || "#888";
+    series.push({
+      name: `${site} 開花`, type: "line", data: flower, connectNulls: true,
+      symbol: "circle", symbolSize: 6, lineStyle: { width: 3 }, itemStyle: { color: c },
+    });
+    series.push({
+      name: `${site} 結果`, type: "line", data: fruit, connectNulls: true,
+      symbol: "rect", symbolSize: 6, lineStyle: { width: 2, type: "dashed" }, itemStyle: { color: c },
+    });
+  });
+  chart("chart-sitecmp").setOption({
+    title: { text: `${sp} — 跨樣區月物候率 (%)`, left: "center", textStyle: { fontSize: 13 } },
+    tooltip: { trigger: "axis", valueFormatter: v => (v == null ? "—" : v + "%") },
+    legend: { top: 26 },
+    grid: { left: 50, right: 25, top: 64, bottom: 30 },
+    xAxis: { type: "category", data: MONTHS_ZH, name: "月份", nameLocation: "middle", nameGap: 26 },
+    yAxis: { type: "value", name: "率 (%)", min: 0, max: 100 },
+    series,
+  }, true);
+}
+
+// §6 初花日 FFD — earliest open-flower DOY per year for one species.
+async function initFFD() {
+  const rows = await getJSON("/api/flower_species");
+  el("ffd-species").innerHTML = rows
+    .map(r => `<option value="${r.scientific_name}">${r.scientific_name} (${r.n})</option>`).join("");
+  const def = rows.find(r => r.scientific_name === "Prunus campanulata") || rows[0];
+  if (def) el("ffd-species").value = def.scientific_name;
+  loadFFD();
+}
+async function loadFFD() {
+  const sp = el("ffd-species").value;
+  const d = await getJSON("/api/ffd?species=" + encodeURIComponent(sp));
+  const data = d.rows.map(r => ({
+    value: [String(r.y), r.doy],
+    itemStyle: r.n < 3 ? { color: "#bbb" } : {},
+    first_date: r.first_date, n: r.n,
+  }));
+  // approximate month gridlines on the DOY axis
+  const monthDOY = [1, 32, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335];
+  chart("chart-ffd").setOption({
+    title: { text: `${sp} — 初花日 First Flowering Date`, left: "center", textStyle: { fontSize: 13 } },
+    tooltip: {
+      trigger: "item",
+      formatter: p => `${p.value[0]}<br>DOY ${p.value[1]} (${p.data.first_date})<br>records: ${p.data.n}`,
+    },
+    grid: { left: 70, right: 25, top: 44, bottom: 40 },
+    xAxis: { type: "category", data: d.rows.map(r => String(r.y)), name: "年", nameLocation: "middle", nameGap: 26 },
+    yAxis: {
+      type: "value", name: "DOY (越低越早)", min: 1, max: 366, inverse: false,
+      splitLine: { show: true },
+      axisLabel: {
+        formatter: v => {
+          const m = monthDOY.findIndex((d2, i) => v >= d2 && (i === 11 || v < monthDOY[i + 1]));
+          return m >= 0 && monthDOY[m] === v ? `${v} (${m + 1}月)` : v;
+        },
+      },
+    },
+    series: [{
+      type: "line", data, connectNulls: true, symbol: "circle", symbolSize: 10,
+      lineStyle: { width: 2, color: "#c0533f" }, itemStyle: { color: "#c0533f" },
+      label: { show: true, position: "top", formatter: p => p.value[1], fontSize: 9 },
+    }],
+  }, true);
+}
+
+// §7 熱帶 vs 溫帶 — group monthly avg leaf-cover (solid) + flower rate (dashed).
+async function loadGroupSeasonality() {
+  const d = await getJSON("/api/group_seasonality");
+  const series = [];
+  d.groups.forEach(g => {
+    const byM = Object.fromEntries(g.rows.map(r => [r.m, r]));
+    const leaf = MONTHS_ZH.map((_, i) => {
+      const r = byM[i + 1]; return r && r.leaf != null ? Math.round(r.leaf) : null;
+    });
+    const flower = MONTHS_ZH.map((_, i) => {
+      const r = byM[i + 1]; return r && r.flower != null ? Math.round(r.flower * 100) : null;
+    });
+    series.push({
+      name: `${g.label} · 葉量`, type: "line", data: leaf, connectNulls: true, smooth: true,
+      symbol: "circle", symbolSize: 6, lineStyle: { width: 3 }, itemStyle: { color: g.color },
+    });
+    series.push({
+      name: `${g.label} · 開花`, type: "line", data: flower, connectNulls: true,
+      symbol: "triangle", symbolSize: 7, lineStyle: { width: 2, type: "dashed" }, itemStyle: { color: g.color },
+    });
+  });
+  el("group-legend").innerHTML = d.groups
+    .map(g => `<span style="color:${g.color};font-weight:700">●</span> ${g.label}: ` +
+              g.species.map(s => `${s.zh}`).join("、")).join(" &nbsp;|&nbsp; ");
+  chart("chart-group").setOption({
+    tooltip: { trigger: "axis", valueFormatter: v => (v == null ? "—" : v + "%") },
+    legend: { top: 0, type: "scroll" },
+    grid: { left: 50, right: 25, top: 56, bottom: 30 },
+    xAxis: { type: "category", data: MONTHS_ZH, name: "月份", nameLocation: "middle", nameGap: 26 },
+    yAxis: { type: "value", name: "% (葉量 / 開花)", min: 0, max: 100 },
+    series,
+  }, true);
+}
+
+// §8 特殊物候 — bimodal-flowering candidates as a month heatmap, peaks starred.
+async function loadDoubleFlower() {
+  const d = await getJSON("/api/double_flower");
+  const cands = d.candidates;
+  const yLabels = cands.map(c => (c.zh ? `${c.zh} ${c.sci}` : c.sci));
+  const data = [];
+  cands.forEach((c, yi) => {
+    c.rate.forEach((v, mi) => { if (v != null) data.push([mi, yi, v]); });
+  });
+  const peaks = [];
+  cands.forEach((c, yi) => c.peaks.forEach(m => peaks.push([m - 1, yi, "★"])));
+  const h = Math.max(360, cands.length * 30 + 80);
+  el("chart-double").style.height = h + "px";
+  chart("chart-double").resize();
+  chart("chart-double").setOption({
+    tooltip: {
+      position: "top",
+      formatter: p => `${yLabels[p.value[1]]}<br>${MONTHS_ZH[p.value[0]]}: ${p.value[2]}%`,
+    },
+    grid: { left: 170, right: 30, top: 16, bottom: 70 },
+    xAxis: { type: "category", data: MONTHS_ZH, splitArea: { show: true } },
+    yAxis: { type: "category", data: yLabels, axisLabel: { fontSize: 10 }, splitArea: { show: true } },
+    visualMap: {
+      min: 0, max: 100, calculable: true, orient: "horizontal", left: "center", bottom: 6,
+      inRange: { color: ["#f4f8f1", "#bfe0ab", "#e8c23f", "#e8922f", "#e1352f"] },
+      text: ["high", "low"],
+    },
+    series: [
+      { name: "開花率", type: "heatmap", data, label: { show: true, formatter: p => p.value[2], fontSize: 9 } },
+      {
+        name: "peak", type: "scatter", data: peaks, symbolSize: 1, z: 5,
+        label: { show: true, formatter: "★", color: "#1a1a1a", fontSize: 12,
+                 position: "top", distance: 2 },
+        tooltip: { show: false },
+      },
+    ],
+  }, true);
+}
+
+// --- tab navigation ---
+function showTab(id) {
+  if (!document.getElementById(id)) return;
+  document.querySelectorAll(".tab-panel").forEach(p => p.classList.toggle("active", p.id === id));
+  document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("active", b.dataset.tab === id));
+  if (location.hash !== "#" + id) history.replaceState(null, "", "#" + id);
+  // charts created while hidden have zero size; resize once visible.
+  requestAnimationFrame(() => Object.values(charts).forEach(c => c.resize()));
+}
+
 // --- wiring ---
 function reloadAll() {
   loadSummary();
@@ -310,7 +483,13 @@ function init() {
   initTree();
   loadCalendar();   // §3 — fixed 12 species, independent of the filter bar
   loadTrend();      // §4 — fixed to 山櫻花
+  initSiteCompare();        // §5
+  initFFD();               // §6
+  loadGroupSeasonality();  // §7
+  loadDoubleFlower();      // §8
   el("tree").addEventListener("change", loadTree);
+  el("sc-species").addEventListener("change", loadSiteCompare);
+  el("ffd-species").addEventListener("change", loadFFD);
 
   ["species", "site", "from_year", "to_year"].forEach(id =>
     el(id).addEventListener("change", reloadAll));
@@ -320,6 +499,10 @@ function init() {
     el("from_year").value = ""; el("to_year").value = "";
     reloadAll();
   });
+
+  document.querySelectorAll("#tabs button").forEach(b =>
+    b.addEventListener("click", () => showTab(b.dataset.tab)));
+  if (location.hash) showTab(location.hash.slice(1));
 }
 
 init();

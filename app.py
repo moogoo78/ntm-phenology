@@ -298,6 +298,185 @@ def api_tree():
     )
 
 
+# ---------------------------------------------------------------------------
+# step2.md extensions — extra analyses, each on its own dashboard tab.
+# ---------------------------------------------------------------------------
+
+# Flower categories that count as an *open* flower (excludes '花枝出現' bud stage
+# and '無'). Used by First-Flowering-Date and double-flowering detection.
+OPEN_FLOWER = ("首次花開", "花開盛期", "花開間期")
+_OPEN_IN = ",".join(["?"] * len(OPEN_FLOWER))
+
+# §5 跨樣區比較 — species observed enough at *both* 二二八公園 and 南門園區.
+SITE_COMPARE_SPECIES = [
+    ("Cinnamomum camphora", "樟樹"), ("Liquidambar formosana", "楓香"),
+    ("Melia azedarach", "苦楝"), ("Prunus campanulata", "山櫻花"),
+    ("Livistona chinensis", "蒲葵"), ("Chionanthus retusus", "流蘇"),
+]
+COMPARE_SITES = ("二二八公園", "南門園區")
+
+# §7 熱帶 vs 溫帶 — curated species groups for the seasonality contrast.
+SPECIES_GROUPS = [
+    {"key": "temperate", "label": "溫帶/落葉 Temperate (deciduous)", "color": "#c0533f",
+     "species": [("Liquidambar formosana", "楓香"), ("Melia azedarach", "苦楝"),
+                 ("Prunus campanulata", "山櫻花"), ("Acer serrulatum", "青楓")]},
+    {"key": "tropical", "label": "熱帶 Tropical", "color": "#2f7d52",
+     "species": [("Bombax ceiba", "木棉"), ("Delonix regia", "鳳凰木"),
+                 ("Cassia fistula", "阿勃勒"), ("Dillenia indica", "第倫桃"),
+                 ("Livistona chinensis", "蒲葵")]},
+]
+
+
+@app.route("/api/flower_species")
+def api_flower_species():
+    """Species ranked by amount of open-flower signal — drives the §6 selector."""
+    rows = query(
+        f"SELECT scientific_name, count(*) AS n FROM phenology "
+        f"WHERE annotation_flower IN ({_OPEN_IN}) AND scientific_name IS NOT NULL "
+        f"GROUP BY scientific_name HAVING count(*) >= 10 ORDER BY n DESC",
+        list(OPEN_FLOWER),
+    )
+    return jsonify(rows)
+
+
+@app.route("/api/site_compare")
+def api_site_compare():
+    """§5 跨樣區比較 — for one species, per month-of-year flowering & fruiting rate
+    at each of the two main sites, so the parks can be compared side by side.
+    """
+    species = request.args.get("species") or SITE_COMPARE_SPECIES[0][0]
+    rows = query(
+        f"SELECT site, month(observed_at) AS m, "
+        f"{_FLOWER_RATE} AS flower, {_FRUIT_RATE} AS fruit, count(*) AS n "
+        f"FROM phenology WHERE observed_at >= ? AND scientific_name = ? "
+        f"AND site IN (?, ?) GROUP BY site, m ORDER BY site, m",
+        [MIN_DATE, species, *COMPARE_SITES],
+    )
+    return jsonify({
+        "species": species, "sites": list(COMPARE_SITES), "rows": rows,
+        "options": [{"sci": s, "zh": z} for s, z in SITE_COMPARE_SPECIES],
+    })
+
+
+@app.route("/api/ffd")
+def api_ffd():
+    """§6 First Flowering Date — for one species, the earliest open-flower date per
+    year as a day-of-year (DOY), with the year's open-flower record count (for
+    sparse-year flagging). Default 山櫻花 (Prunus campanulata).
+    """
+    species = request.args.get("species") or "Prunus campanulata"
+    rows = query(
+        f"SELECT year(observed_at) AS y, "
+        f"min(dayofyear(observed_at)) AS doy, "
+        f"min(observed_at) AS first_date, count(*) AS n "
+        f"FROM phenology WHERE observed_at >= ? AND scientific_name = ? "
+        f"AND annotation_flower IN ({_OPEN_IN}) GROUP BY y ORDER BY y",
+        [MIN_DATE, species, *OPEN_FLOWER],
+    )
+    for r in rows:  # first_date -> ISO date string for the tooltip
+        r["first_date"] = r["first_date"].strftime("%Y-%m-%d") if r["first_date"] else None
+    return jsonify({"species": species, "rows": rows})
+
+
+@app.route("/api/group_seasonality")
+def api_group_seasonality():
+    """§7 熱帶 vs 溫帶 — per group, per month-of-year: average leaf-cover % (banded
+    ratios -> midpoints) and flowering rate, contrasting deciduous vs evergreen.
+    """
+    lc = RATIO_MIDPOINT.format(col="annotation_leaf_cover_ratio")
+    groups = []
+    for g in SPECIES_GROUPS:
+        names = [s for s, _ in g["species"]]
+        ph = ",".join(["?"] * len(names))
+        rows = query(
+            f"SELECT month(observed_at) AS m, avg({lc}) AS leaf, "
+            f"{_FLOWER_RATE} AS flower, count(*) AS n "
+            f"FROM phenology WHERE observed_at >= ? AND scientific_name IN ({ph}) "
+            f"GROUP BY m ORDER BY m",
+            [MIN_DATE] + names,
+        )
+        groups.append({
+            "key": g["key"], "label": g["label"], "color": g["color"],
+            "species": [{"sci": s, "zh": z} for s, z in g["species"]], "rows": rows,
+        })
+    return jsonify({"groups": groups})
+
+
+def _circular_runs(active):
+    """Number of contiguous runs of True in a circular 12-month boolean list."""
+    n = len(active)
+    if all(active):
+        return 1
+    if not any(active):
+        return 0
+    # start at a False month so wrap-around runs aren't split in two.
+    start = active.index(False)
+    runs, prev = 0, False
+    for i in range(n):
+        cur = active[(start + i) % n]
+        if cur and not prev:
+            runs += 1
+        prev = cur
+    return runs
+
+
+@app.route("/api/double_flower")
+def api_double_flower():
+    """§8 特殊物候 — species whose pooled monthly flowering rate is *bimodal*
+    (two separate peaks with an inactive month between), i.e. flowering twice a
+    year. Returns each candidate's 12-month rate curve + its peak months.
+    """
+    thr = float(request.args.get("threshold") or 0.25)
+    rows = query(
+        f"SELECT scientific_name AS sci, month(observed_at) AS m, "
+        f"count(*) FILTER (WHERE annotation_flower IS NOT NULL "
+        f"  AND annotation_flower <> '無')::double "
+        f"  / nullif(count(*) FILTER (WHERE annotation_flower IS NOT NULL), 0) AS rate, "
+        f"count(*) FILTER (WHERE annotation_flower IS NOT NULL) AS assessed "
+        f"FROM phenology WHERE observed_at >= ? AND scientific_name IS NOT NULL "
+        f"GROUP BY sci, m",
+        [MIN_DATE],
+    )
+    by_sci = {}
+    for r in rows:
+        d = by_sci.setdefault(r["sci"], {"rate": [None] * 12, "assessed": [0] * 12})
+        d["rate"][r["m"] - 1] = r["rate"]
+        d["assessed"][r["m"] - 1] = r["assessed"]
+
+    out = []
+    for sci, d in by_sci.items():
+        if sum(d["assessed"]) < 40:  # too little flowering data to judge
+            continue
+        active = [
+            (r is not None and r >= thr and a >= 3)
+            for r, a in zip(d["rate"], d["assessed"])
+        ]
+        if _circular_runs(active) < 2:
+            continue
+        # peak month within each run (months are 1-12, circular)
+        peaks, i = [], 0
+        flags = active[:]
+        while i < 12:
+            if flags[i]:
+                j = i
+                while j < 12 and flags[j]:
+                    j += 1
+                seg = range(i, j)
+                pk = max(seg, key=lambda k: d["rate"][k] or 0)
+                peaks.append(pk + 1)
+                i = j
+            else:
+                i += 1
+        out.append({
+            "sci": sci, "zh": COMMON_NAMES.get(sci, ""),
+            "rate": [round(r * 100, 1) if r is not None else None for r in d["rate"]],
+            "assessed": d["assessed"], "peaks": sorted(peaks),
+            "n_peaks": len(peaks), "total_assessed": sum(d["assessed"]),
+        })
+    out.sort(key=lambda x: (-x["n_peaks"], -x["total_assessed"]))
+    return jsonify({"threshold": thr, "candidates": out})
+
+
 @app.route("/api/phenology")
 def api_phenology():
     """Per phenophase (flower/fruit/leaf) x month-of-year (1-12):
