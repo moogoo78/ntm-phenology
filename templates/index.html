@@ -16,7 +16,7 @@
   <nav class="tabs" id="tabs">
     <button data-tab="t1" class="active">1 · 資料概況</button>
     <button data-tab="t2">2 · 一棵樹的一年</button>
-    <button data-tab="t3">3 · 物候月曆</button>
+    <button data-tab="t3">3 · 城市的季節節律</button>
     <button data-tab="t4">4 · 跨年度趨勢</button>
     <button data-tab="t5">5 · 跨樣區比較</button>
     <button data-tab="t6">6 · 初花日 FFD</button>
@@ -68,23 +68,65 @@
   <section class="tab-panel" id="t2">
     <div class="chart-block">
       <h2>2 · 一棵樹的一年故事 <span class="zh">Individual Tree Story</span></h2>
-      <label class="inline">Tree 個體
-        <select id="tree"></select>
+      <label class="inline">資料 Data
+        <select id="tree-mode">
+          <option value="all">全部年份 All years</option>
+          <option value="fine">2024–2025 精細 Fine data</option>
+        </select>
       </label>
-      <div id="chart-tree" class="chart" style="height:420px"></div>
+      <div id="tree-pane-all">
+        <label class="inline">Tree 個體
+          <select id="tree"></select>
+        </label>
+        <div id="chart-tree" class="chart" style="height:420px"></div>
+      </div>
+      <div id="tree-pane-fine" style="display:none">
+        <p class="hint">2024–2025 的精細 <b>比例</b> 資料（百分比分級）：總葉量覆蓋率、新葉、<b>變色葉 (葉變色)</b>、
+          開花率、成熟果率，皆為月平均 %。比「全部年份」更精準（後者花果為機率、且葉量僅 2024–25 才有）。</p>
+        <label class="inline">Tree 個體
+          <select id="tree-fine"></select>
+        </label>
+        <div id="chart-tree-fine" class="chart" style="height:440px"></div>
+      </div>
     </div>
   </section>
 
   <!-- §3 物候月曆 Phenology Calendar -->
   <section class="tab-panel" id="t3">
     <div class="chart-block">
-      <h2>3 · 物候月曆 <span class="zh">Phenology Calendar</span></h2>
-      <p class="hint">12 representative species × month. A mark appears only past threshold —
-        flowering / fruiting &gt; 30%, new leaf &gt; 15%. Symbol size scales with magnitude.
-        <span style="color:#e1352f">●</span> 開花 Flower ·
-        <span style="color:#e8922f">■</span> 結果 Fruit ·
-        <span style="color:#8cc06f">▲</span> 新葉 New leaf</p>
-      <div id="chart-calendar" class="chart" style="height:520px"></div>
+      <h2>3 · 城市的季節節律 <span class="zh">Seasonal rhythm</span></h2>
+      <label class="inline">資料 Data
+        <select id="cal-mode">
+          <option value="all">全部年份 All years</option>
+          <option value="fine">2024–2025 精細 Fine data</option>
+        </select>
+      </label>
+      <div id="cal-pane-all">
+        <p class="hint">選取部分物種來呈現顯著的花、果、新葉狀態。
+          <span style="color:#e1352f">●</span> 開花 Flower ·
+          <span style="color:#e8922f">■</span> 結果 Fruit ·
+          <span style="color:#8cc06f">▲</span> 新葉 New leaf</p>
+        <label class="inline">門檻 Threshold
+          <select id="cal-threshold">
+            <option value="30,15">平均開花、結果比例 &gt; 30%；平均新葉比例 &gt; 15%</option>
+            <option value="0,15">平均開花、結果比例 &gt; 0%；平均新葉比例 &gt; 15%</option>
+            <option value="5,15">平均開花、結果比例 &gt; 5%；平均新葉比例 &gt; 15%</option>
+            <option value="25,15">平均開花、結果比例 &gt; 25%；平均新葉比例 &gt; 15%</option>
+            <option value="30,0">平均開花、結果比例 &gt; 30%；平均新葉比例 &gt; 0%</option>
+            <option value="30,5">平均開花、結果比例 &gt; 30%；平均新葉比例 &gt; 5%</option>
+          </select>
+        </label>
+        <div id="chart-calendar" class="chart" style="height:520px"></div>
+      </div>
+      <div id="cal-pane-fine" style="display:none">
+        <p class="hint">12 representative species × month，用 2024–2025 精細比例資料。A mark appears only past threshold —
+          開花 / 成熟果 &gt; 30%，新葉 / 變色葉 &gt; 15%。Symbol size scales with magnitude.
+          <span style="color:#e1352f">●</span> 開花 Flower ·
+          <span style="color:#e8922f">■</span> 成熟果 Fruit ·
+          <span style="color:#8cc06f">▲</span> 新葉 New leaf ·
+          <span style="color:#c79a3f">◆</span> 變色葉 Discolored</p>
+        <div id="chart-calendar-fine" class="chart" style="height:520px"></div>
+      </div>
     </div>
   </section>
 
@@ -92,10 +134,15 @@
   <section class="tab-panel" id="t4">
     <div class="chart-block">
       <h2>4 · 跨年度趨勢 <span class="zh">Crossed-year Trends</span></h2>
-      <p class="hint">山櫻花 (Prunus campanulata) average flowering probability by year × month.
-        Bold-outlined cell = each year's peak month. <code>2021*</code> = sparse data; blank rows
-        = years with observations but no flowering annotation.</p>
+      <p class="hint">所選物種的年 × 月平均開花機率、結果機率、新葉比例。Bold-outlined cell = each year's peak month.
+        <code>2021*</code> = sparse data; blank rows = years with observations but no annotation
+        (note: 2024–2025 use ratio columns, no categorical flower/fruit data — see tabs 9–10).</p>
+      <label class="inline">Species 物種
+        <select id="trend-species"></select>
+      </label>
       <div id="chart-trend" class="chart" style="height:380px"></div>
+      <div id="chart-trend-fruit" class="chart" style="height:380px"></div>
+      <div id="chart-trend-leaf" class="chart" style="height:380px"></div>
     </div>
   </section>
 

@@ -116,7 +116,8 @@ def api_summary():
     totals = query(
         "SELECT count(*) AS observations, "
         "count(DISTINCT scientific_name) AS species, "
-        "count(DISTINCT tree_id) AS trees FROM phenology" + where,
+        "count(DISTINCT tree_id) AS trees, "
+        "count(DISTINCT site) AS sites FROM phenology" + where,
         params,
     )[0]
     by_site = query(
@@ -134,6 +135,8 @@ def api_summary():
         + where + " GROUP BY scientific_name ORDER BY n DESC LIMIT 30",
         params,
     )
+    for r in top_species:
+        r["common_name"] = COMMON_NAMES.get(r["scientific_name"], "")
     return jsonify(
         {"totals": totals, "by_site": by_site, "by_year": by_year, "top_species": top_species}
     )
@@ -234,9 +237,11 @@ def api_year_month():
     (default 山櫻花 / Prunus campanulata), with the row count for sparse-year flags.
     """
     species = request.args.get("species") or "Prunus campanulata"
+    yl = RATIO_MIDPOINT.format(col="annotation_young_leaf_ratio")
     rows = query(
         f"SELECT year(observed_at) AS y, month(observed_at) AS m, "
-        f"{_FLOWER_RATE} AS flower, count(*) AS n "
+        f"{_FLOWER_RATE} AS flower, {_FRUIT_RATE} AS fruit, avg({yl}) AS leaf, "
+        f"count(*) AS n "
         f"FROM phenology WHERE observed_at >= ? AND scientific_name = ? "
         f"GROUP BY y, m ORDER BY y, m",
         [MIN_DATE, species],
@@ -256,12 +261,27 @@ RATIO_MIDPOINT = (
 
 @app.route("/api/trees")
 def api_trees():
-    """Individual trees with their species + observation count, for the selector."""
-    rows = query(
-        "SELECT tree_id, any_value(scientific_name) AS scientific_name, count(*) AS n "
-        "FROM phenology WHERE tree_id IS NOT NULL AND tree_id <> '' "
-        "GROUP BY tree_id ORDER BY tree_id"
-    )
+    """Individual trees with their species + observation count, for the selector.
+
+    With ?fine=1, restrict to trees that have precise 2024-2025 ratio data
+    (drives the §9 fine-data tree selector) and count only those rows.
+    """
+    fine = request.args.get("fine") == "1"
+    if fine:
+        rows = query(
+            f"SELECT tree_id, any_value(scientific_name) AS scientific_name, count(*) AS n "
+            f"FROM phenology WHERE tree_id IS NOT NULL AND tree_id <> '' "
+            f"AND year(observed_at) IN ({_FINE_YEAR_IN}) "
+            f"AND annotation_leaf_cover_ratio IS NOT NULL "
+            f"GROUP BY tree_id ORDER BY tree_id",
+            list(FINE_YEARS),
+        )
+    else:
+        rows = query(
+            "SELECT tree_id, any_value(scientific_name) AS scientific_name, count(*) AS n "
+            "FROM phenology WHERE tree_id IS NOT NULL AND tree_id <> '' "
+            "GROUP BY tree_id ORDER BY tree_id"
+        )
     for r in rows:
         r["common_name"] = COMMON_NAMES.get(r["scientific_name"], "")
     return jsonify(rows)
@@ -502,6 +522,68 @@ def api_double_flower():
         })
     out.sort(key=lambda x: (-x["n_peaks"], -x["total_assessed"]))
     return jsonify({"threshold": thr, "candidates": out})
+
+
+# ---------------------------------------------------------------------------
+# step2.md #2 — "fine data" views for 2024-2025, which use precise banded
+# ratio columns (flower_ratio, mature_fruit_ratio, young_leaf_ratio,
+# leaf_cover_ratio, discolored_leaf_ratio) instead of the categorical
+# flower/fruit annotations used in 2018-2023. All bands map through
+# RATIO_MIDPOINT to a representative %; averages are over those midpoints.
+# ---------------------------------------------------------------------------
+FINE_YEARS = (2024, 2025)
+_FINE_YEAR_IN = ",".join(["?"] * len(FINE_YEARS))
+
+
+@app.route("/api/tree_fine")
+def api_tree_fine():
+    """§9 細緻 一棵樹的一年 (2024-2025) — for one tree, per month-of-year the
+    average leaf-cover %, new-leaf %, discolored-leaf % (葉變色), flowering % and
+    mature-fruit %, all from the precise 2024-2025 ratio columns.
+    """
+    tree_id = request.args.get("tree_id") or None
+    if not tree_id:
+        return jsonify({"tree_id": None, "scientific_name": None, "months": []})
+    cols = {
+        "leaf_cover": "annotation_leaf_cover_ratio", "young_leaf": "annotation_young_leaf_ratio",
+        "discolored": "annotation_discolored_leaf_ratio", "flower": "annotation_flower_ratio",
+        "fruit": "annotation_mature_fruit_ratio",
+    }
+    avgs = ", ".join(f"avg({RATIO_MIDPOINT.format(col=c)}) AS {k}" for k, c in cols.items())
+    months = query(
+        f"SELECT month(observed_at) AS m, {avgs}, count(*) AS n "
+        f"FROM phenology WHERE tree_id = ? AND year(observed_at) IN ({_FINE_YEAR_IN}) "
+        f"GROUP BY m ORDER BY m",
+        [tree_id, *FINE_YEARS],
+    )
+    sp = query(
+        "SELECT any_value(scientific_name) AS sp FROM phenology WHERE tree_id = ?", [tree_id]
+    )
+    return jsonify(
+        {"tree_id": tree_id, "scientific_name": sp[0]["sp"] if sp else None, "months": months}
+    )
+
+
+@app.route("/api/calendar_fine")
+def api_calendar_fine():
+    """§10 細緻 物候月曆 (2024-2025) — for the 12 target species, per month-of-year
+    average flowering %, mature-fruit %, new-leaf % and discolored-leaf %, from
+    the precise 2024-2025 ratio columns. Thresholds applied client-side.
+    """
+    cols = {
+        "flower": "annotation_flower_ratio", "fruit": "annotation_mature_fruit_ratio",
+        "leaf": "annotation_young_leaf_ratio", "discolored": "annotation_discolored_leaf_ratio",
+    }
+    avgs = ", ".join(f"avg({RATIO_MIDPOINT.format(col=c)}) AS {k}" for k, c in cols.items())
+    names = [s for s, _ in TARGET_SPECIES]
+    placeholders = ",".join(["?"] * len(names))
+    rows = query(
+        f"SELECT scientific_name, month(observed_at) AS m, {avgs} "
+        f"FROM phenology WHERE year(observed_at) IN ({_FINE_YEAR_IN}) "
+        f"AND scientific_name IN ({placeholders}) GROUP BY scientific_name, m",
+        [*FINE_YEARS, *names],
+    )
+    return jsonify({"species": [{"sci": s, "zh": z} for s, z in TARGET_SPECIES], "rows": rows})
 
 
 @app.route("/api/phenology")

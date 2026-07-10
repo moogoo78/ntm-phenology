@@ -92,7 +92,8 @@ async function loadSummary() {
   el("cards").innerHTML = [
     [t.observations, "Observations 觀測"],
     [t.species, "Species 物種"],
-    [t.trees, "Trees 樹木"],
+    [t.trees, "樹木個體數"],
+    [t.sites, "觀察地點"],
   ].map(([n, l]) => `<div class="card"><div class="num">${(n || 0).toLocaleString()}</div><div class="lbl">${l}</div></div>`).join("");
 
   chart("chart-site").setOption({

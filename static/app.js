@@ -65,7 +65,8 @@ async function loadSummary() {
   el("cards").innerHTML = [
     [t.observations, "Observations 觀測"],
     [t.species, "Species 物種"],
-    [t.trees, "Trees 樹木"],
+    [t.trees, "樹木個體數"],
+    [t.sites, "觀察地點"],
   ].map(([n, l]) => `<div class="card"><div class="num">${(n || 0).toLocaleString()}</div><div class="lbl">${l}</div></div>`).join("");
 
   chart("chart-site").setOption({
@@ -73,17 +74,21 @@ async function loadSummary() {
     tooltip: { trigger: "item" },
     series: [{
       type: "pie", radius: ["40%", "70%"], center: ["50%", "56%"],
-      data: d.by_site.map(r => ({ name: r.site, value: r.n })),
+      data: d.by_site.map(r => ({
+        name: r.site, value: r.n,
+        itemStyle: { color: SITE_COLORS[r.site] || "#888" },
+      })),
       label: { formatter: "{b}\n{c} ({d}%)" },
     }],
   }, true);
 
   const top = d.top_species.slice().reverse();
   chart("chart-top").setOption({
-    grid: { left: 170, right: 30, top: 10, bottom: 20 },
+    grid: { left: 240, right: 30, top: 10, bottom: 20 },
     tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
     xAxis: { type: "value" },
-    yAxis: { type: "category", data: top.map(r => r.scientific_name),
+    yAxis: { type: "category",
+             data: top.map(r => r.common_name ? `${r.scientific_name} (${r.common_name})` : r.scientific_name),
              axisLabel: { fontSize: 10 } },
     series: [{ type: "bar", data: top.map(r => r.n), itemStyle: { color: "#2f7d52" } }],
   }, true);
@@ -220,18 +225,31 @@ async function loadObservations() {
 }
 
 // §3 Phenology calendar — 12 species × 12 months, dot-grid with thresholds.
-// flower/fruit are 0-1 (threshold 0.30); leaf is avg % (threshold 15).
+// flower/fruit are 0-1 ratios (compared as %); leaf is avg %. Thresholds are
+// user-selectable via #cal-threshold ("<flower/fruit %>,<leaf %>").
+let calData = null;
 async function loadCalendar() {
-  const d = await getJSON("/api/calendar");
-  const yLabels = d.species.map(s => `${s.zh} ${s.sci}`);
+  calData = await getJSON("/api/calendar");
+  el("cal-threshold").addEventListener("change", renderCalendar);
+  renderCalendar();
+}
+
+function renderCalendar() {
+  const d = calData;
+  if (!d) return;
+  const [ffMin, leafMin] = (el("cal-threshold").value || "30,15").split(",").map(Number);
+  // Axis: common name on its own line above the (italic) scientific name so
+  // long labels wrap instead of overflowing the grid. Tooltip keeps one line.
+  const yData = d.species.map(s => (s.zh ? `${s.zh}\n{sci|${s.sci}}` : `{sci|${s.sci}}`));
+  const yLabels = d.species.map(s => `${s.zh} ${s.sci}`.trim());
   const yIndex = Object.fromEntries(d.species.map((s, i) => [s.sci, i]));
   const flower = [], fruit = [], leaf = [];
   d.rows.forEach(r => {
     const yi = yIndex[r.scientific_name];
     if (yi == null) return;
-    if (r.flower != null && r.flower > 0.30) flower.push([r.m - 1, yi, Math.round(r.flower * 100)]);
-    if (r.fruit != null && r.fruit > 0.30) fruit.push([r.m - 1, yi, Math.round(r.fruit * 100)]);
-    if (r.leaf != null && r.leaf > 15) leaf.push([r.m - 1, yi, Math.round(r.leaf)]);
+    if (r.flower != null && r.flower * 100 > ffMin) flower.push([r.m - 1, yi, Math.round(r.flower * 100)]);
+    if (r.fruit != null && r.fruit * 100 > ffMin) fruit.push([r.m - 1, yi, Math.round(r.fruit * 100)]);
+    if (r.leaf != null && r.leaf > leafMin) leaf.push([r.m - 1, yi, Math.round(r.leaf)]);
   });
   // Symbol size scales with magnitude (value is %, 0-100).
   const sized = (data, unit) => ({
@@ -243,7 +261,11 @@ async function loadCalendar() {
     legend: { top: 0, data: ["開花 Flower", "結果 Fruit", "新葉 New leaf"] },
     grid: { left: 150, right: 30, top: 36, bottom: 30 },
     xAxis: { type: "category", data: MONTHS_ZH, splitLine: { show: true } },
-    yAxis: { type: "category", data: yLabels, axisLabel: { fontSize: 10 }, splitLine: { show: true } },
+    yAxis: { type: "category", data: yData, splitLine: { show: true },
+      axisLabel: {
+        fontSize: 11, lineHeight: 14,
+        rich: { sci: { fontSize: 9, fontStyle: "italic", color: "#667", lineHeight: 13 } },
+      } },
     series: [
       { name: "開花 Flower", type: "scatter", symbol: "circle", itemStyle: { color: "rgba(225,53,47,0.85)" }, ...sized(flower, "%") },
       { name: "結果 Fruit", type: "scatter", symbol: "rect", itemStyle: { color: "rgba(232,146,47,0.85)" }, ...sized(fruit, "%") },
@@ -252,38 +274,69 @@ async function loadCalendar() {
   }, true);
 }
 
-// §4 Crossed-year trend — 山櫻花 flowering rate heatmap, year × month, peak outlined.
+// §4 Crossed-year trend — flowering rate heatmap, year × month, peak outlined.
+// step2.md #1: species is now selectable (preset list + all species).
+const TREND_PRESET = [
+  ["Prunus campanulata", "山櫻花"], ["Bischofia javanica", "茄苳"],
+  ["Millettia pinnata", "水黃皮"], ["Bauhinia × blakeana", "洋紫荊"],
+  ["Keteleeria davidiana formosana", "臺灣油杉"], ["Ternstroemia gymnanthera", "厚皮香"],
+  ["Quercus glauca", "青剛櫟"], ["Acer buergerianum", "臺灣三角楓"],
+  ["Acer serrulatum", "青楓"], ["Magnolia compressa", "烏心石"],
+];
+async function initTrend() {
+  const all = await getJSON("/api/species");
+  const preset = new Set(TREND_PRESET.map(p => p[0]));
+  const presetOpts = TREND_PRESET
+    .map(([sci, zh]) => `<option value="${sci}">${zh} ${sci}</option>`).join("");
+  const restOpts = all.filter(r => !preset.has(r.scientific_name))
+    .map(r => `<option value="${r.scientific_name}">${r.scientific_name} (${r.n})</option>`).join("");
+  el("trend-species").innerHTML =
+    `<optgroup label="step2 重點物種">${presetOpts}</optgroup>` +
+    `<optgroup label="其他 All species">${restOpts}</optgroup>`;
+  el("trend-species").value = "Prunus campanulata";
+  loadTrend();
+}
 async function loadTrend() {
-  const d = await getJSON("/api/year_month?species=" + encodeURIComponent("Prunus campanulata"));
+  const sp = el("trend-species") ? el("trend-species").value : "Prunus campanulata";
+  const d = await getJSON("/api/year_month?species=" + encodeURIComponent(sp));
   const years = [...new Set(d.rows.map(r => r.y))].sort();
   const yIndex = Object.fromEntries(years.map((y, i) => [y, i]));
-  // Peak month per year (only meaningful when that year has some flowering > 0).
+  const yLabels = years.map(y => (y === 2021 ? "2021*" : String(y)));
+  const ctx = { rows: d.rows, years, yIndex, yLabels };
+  // flower/fruit are 0-1 probabilities (→ %); leaf is already an avg %.
+  trendHeatmap("chart-trend", ctx, "flower", `${sp} — 年 × 月 開花機率 (%)`, v => Math.round(v * 100));
+  trendHeatmap("chart-trend-fruit", ctx, "fruit", `${sp} — 年 × 月 結果機率 (%)`, v => Math.round(v * 100));
+  trendHeatmap("chart-trend-leaf", ctx, "leaf", `${sp} — 年 × 月 新葉比例 (%)`, v => Math.round(v));
+}
+
+// One year×month heatmap for a given metric; each year's peak month is outlined.
+function trendHeatmap(id, ctx, key, title, toPct) {
+  const { rows, years, yIndex, yLabels } = ctx;
   const peakMonth = {};
   years.forEach(y => {
-    const yr = d.rows.filter(r => r.y === y && r.flower != null && r.flower > 0);
-    if (yr.length) peakMonth[y] = yr.reduce((a, b) => (b.flower > a.flower ? b : a)).m;
+    const yr = rows.filter(r => r.y === y && r[key] != null && r[key] > 0);
+    if (yr.length) peakMonth[y] = yr.reduce((a, b) => (b[key] > a[key] ? b : a)).m;
   });
-  const data = d.rows.filter(r => r.flower != null).map(r => {
-    const val = Math.round(r.flower * 100);
+  const data = rows.filter(r => r[key] != null).map(r => {
     const isPeak = peakMonth[r.y] === r.m;
     return {
-      value: [r.m - 1, yIndex[r.y], val],
+      value: [r.m - 1, yIndex[r.y], toPct(r[key])],
       itemStyle: isPeak ? { borderColor: "#1a1a1a", borderWidth: 2.5 } : {},
     };
   });
-  const yLabels = years.map(y => (y === 2021 ? "2021*" : String(y)));
-  chart("chart-trend").setOption({
+  chart(id).setOption({
+    title: { text: title, left: "center", textStyle: { fontSize: 13 } },
     tooltip: { position: "top", formatter: p => `${yLabels[p.value[1]]} · ${MONTHS_ZH[p.value[0]]}: ${p.value[2]}%` },
-    grid: { left: 60, right: 30, top: 20, bottom: 60 },
+    grid: { left: 60, right: 30, top: 44, bottom: 60 },
     xAxis: { type: "category", data: MONTHS_ZH, splitArea: { show: true } },
     yAxis: { type: "category", data: yLabels, splitArea: { show: true } },
     visualMap: {
-      min: 0, max: 100, calculable: true, orient: "horizontal", left: "center", bottom: 6,
+      min: 0, max: 100, calculable: false, orient: "horizontal", left: "center", bottom: 6,
       inRange: { color: ["#f4f8f1", "#bfe0ab", "#e8c23f", "#e8922f", "#e1352f"] },
       text: ["high", "low"],
     },
     series: [{
-      name: "開花機率", type: "heatmap", data,
+      name: title, type: "heatmap", data,
       label: { show: true, formatter: p => p.value[2], fontSize: 9 },
     }],
   }, true);
@@ -535,6 +588,89 @@ async function loadDoubleFlower() {
   }, true);
 }
 
+// §9 細緻 一棵樹的一年 (2024-2025) — all 5 series are % on one axis.
+async function initTreeFine() {
+  const rows = await getJSON("/api/trees?fine=1");
+  el("tree-fine").innerHTML = rows.map(r => {
+    const label = [r.tree_id, r.scientific_name, r.common_name].filter(Boolean).join("  ");
+    return `<option value="${r.tree_id}">${label}</option>`;
+  }).join("");
+  const def = rows.find(r => r.tree_id === "0102") || rows[0];
+  if (def) { el("tree-fine").value = def.tree_id; loadTreeFine(); }
+}
+async function loadTreeFine() {
+  const tree_id = el("tree-fine").value.trim();
+  if (!tree_id) { chart("chart-tree-fine").clear(); return; }
+  const d = await getJSON("/api/tree_fine?tree_id=" + encodeURIComponent(tree_id));
+  if (!d.months || !d.months.length) { chart("chart-tree-fine").clear(); return; }
+  const byM = Object.fromEntries(d.months.map(r => [r.m, r]));
+  const pick = key => MONTHS_ZH.map((_, i) => {
+    const r = byM[i + 1]; const v = r ? r[key] : null;
+    return v == null ? null : Math.round(v);
+  });
+  chart("chart-tree-fine").setOption({
+    title: { text: `細緻 (2024–25)：${d.scientific_name || "?"} (個體 ID: ${d.tree_id})`,
+             left: "center", textStyle: { fontSize: 13 } },
+    tooltip: { trigger: "axis", valueFormatter: v => (v == null ? "—" : v + "%") },
+    legend: { top: 26, type: "scroll" },
+    grid: { left: 55, right: 25, top: 64, bottom: 30 },
+    xAxis: { type: "category", data: MONTHS_ZH, name: "月份", nameLocation: "middle", nameGap: 26 },
+    yAxis: { type: "value", name: "比例 (%)", min: 0, max: 100 },
+    series: [
+      { name: "總葉量覆蓋率", type: "line", data: pick("leaf_cover"), smooth: true,
+        symbol: "none", connectNulls: true, z: 1, lineStyle: { opacity: 0 },
+        areaStyle: { color: "rgba(140,192,111,0.30)" }, itemStyle: { color: "rgba(140,192,111,0.6)" } },
+      { name: "新葉", type: "bar", data: pick("young_leaf"), barWidth: "40%",
+        itemStyle: { color: "#8cc06f" }, z: 2 },
+      { name: "變色葉", type: "line", data: pick("discolored"), connectNulls: true,
+        symbol: "diamond", symbolSize: 7, lineStyle: { width: 2 }, itemStyle: { color: "#c79a3f" }, z: 3 },
+      { name: "開花率", type: "line", data: pick("flower"), connectNulls: true,
+        symbol: "circle", symbolSize: 7, lineStyle: { width: 3 }, itemStyle: { color: "#e1352f" }, z: 5 },
+      { name: "成熟果率", type: "line", data: pick("fruit"), connectNulls: true,
+        symbol: "rect", symbolSize: 7, lineStyle: { width: 2, type: "dashed" }, itemStyle: { color: "#e8922f" }, z: 4 },
+    ],
+  }, true);
+}
+
+// §10 細緻 物候月曆 (2024-2025) — dot grid, 4 phenophases from ratio columns.
+async function loadCalendarFine() {
+  const d = await getJSON("/api/calendar_fine");
+  // Two-line axis labels (common name over italic scientific name); tooltip one line.
+  const yData = d.species.map(s => (s.zh ? `${s.zh}\n{sci|${s.sci}}` : `{sci|${s.sci}}`));
+  const yLabels = d.species.map(s => `${s.zh} ${s.sci}`.trim());
+  const yIndex = Object.fromEntries(d.species.map((s, i) => [s.sci, i]));
+  const flower = [], fruit = [], leaf = [], disc = [];
+  d.rows.forEach(r => {
+    const yi = yIndex[r.scientific_name];
+    if (yi == null) return;
+    if (r.flower != null && r.flower > 30) flower.push([r.m - 1, yi, Math.round(r.flower)]);
+    if (r.fruit != null && r.fruit > 30) fruit.push([r.m - 1, yi, Math.round(r.fruit)]);
+    if (r.leaf != null && r.leaf > 15) leaf.push([r.m - 1, yi, Math.round(r.leaf)]);
+    if (r.discolored != null && r.discolored > 15) disc.push([r.m - 1, yi, Math.round(r.discolored)]);
+  });
+  const sized = data => ({
+    data, symbolSize: v => 10 + (v[2] / 100) * 18,
+    tooltip: { formatter: p => `${yLabels[p.value[1]]}<br>${MONTHS_ZH[p.value[0]]} · ${p.seriesName}: ${p.value[2]}%` },
+  });
+  chart("chart-calendar-fine").setOption({
+    tooltip: { trigger: "item" },
+    legend: { top: 0, data: ["開花 Flower", "成熟果 Fruit", "新葉 New leaf", "變色葉 Discolored"] },
+    grid: { left: 150, right: 30, top: 36, bottom: 30 },
+    xAxis: { type: "category", data: MONTHS_ZH, splitLine: { show: true } },
+    yAxis: { type: "category", data: yData, splitLine: { show: true },
+      axisLabel: {
+        fontSize: 11, lineHeight: 14,
+        rich: { sci: { fontSize: 9, fontStyle: "italic", color: "#667", lineHeight: 13 } },
+      } },
+    series: [
+      { name: "開花 Flower", type: "scatter", symbol: "circle", itemStyle: { color: "rgba(225,53,47,0.85)" }, ...sized(flower) },
+      { name: "成熟果 Fruit", type: "scatter", symbol: "rect", itemStyle: { color: "rgba(232,146,47,0.85)" }, ...sized(fruit) },
+      { name: "新葉 New leaf", type: "scatter", symbol: "triangle", itemStyle: { color: "rgba(140,192,111,0.9)" }, ...sized(leaf) },
+      { name: "變色葉 Discolored", type: "scatter", symbol: "diamond", itemStyle: { color: "rgba(199,154,63,0.9)" }, ...sized(disc) },
+    ],
+  }, true);
+}
+
 // --- tab navigation ---
 function showTab(id) {
   if (!document.getElementById(id)) return;
@@ -565,14 +701,30 @@ function init() {
   reloadAll();
   initTree();
   loadCalendar();   // §3 — fixed 12 species, independent of the filter bar
-  loadTrend();      // §4 — fixed to 山櫻花
+  initTrend();      // §4 — species-selectable (step2 #1)
   initSiteCompare();        // §5
   initFFD();               // §6
   loadGroupSeasonality();  // §7
   loadDoubleFlower();      // §8
+  initTreeFine();          // §9  (step2 #2)
+  loadCalendarFine();      // §10 (step2 #2)
   el("tree").addEventListener("change", loadTree);
+  el("trend-species").addEventListener("change", loadTrend);
   el("sc-species").addEventListener("change", loadSiteCompare);
   el("ffd-species").addEventListener("change", loadFFD);
+  el("tree-fine").addEventListener("change", loadTreeFine);
+
+  // §2 / §3 data-scope toggle: swap the standard chart for the 2024–2025 fine
+  // version. Charts built while hidden need a resize once their pane is shown.
+  const paneToggle = (sel, allPane, finePane, allChart, fineChart) =>
+    el(sel).addEventListener("change", () => {
+      const fine = el(sel).value === "fine";
+      el(allPane).style.display = fine ? "none" : "";
+      el(finePane).style.display = fine ? "" : "none";
+      requestAnimationFrame(() => chart(fine ? fineChart : allChart).resize());
+    });
+  paneToggle("tree-mode", "tree-pane-all", "tree-pane-fine", "chart-tree", "chart-tree-fine");
+  paneToggle("cal-mode", "cal-pane-all", "cal-pane-fine", "chart-calendar", "chart-calendar-fine");
 
   ["species", "site", "from_year", "to_year"].forEach(id =>
     el(id).addEventListener("change", reloadAll));
