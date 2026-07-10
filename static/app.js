@@ -377,6 +377,89 @@ async function loadFFD() {
       label: { show: true, position: "top", formatter: p => p.value[1], fontSize: 9 },
     }],
   }, true);
+  loadPhenoScatter();
+}
+
+// §6 companion — DOY × Year scatter of every phenophase record, coloured by
+// "trait". Each raw annotation value maps to a display label + colour; the order
+// here also fixes the legend / plotting order.
+const PHENO_TRAIT = {
+  "首次花開": { label: "開花 open flower", color: "#e8503a" },
+  "花開盛期": { label: "開花 open flower", color: "#e8503a" },
+  "花開間期": { label: "開花 open flower", color: "#e8503a" },
+  "花枝出現": { label: "花苞 flower bud", color: "#e07be0" },
+  "未熟果": { label: "未熟果 unripe fruit", color: "#35b58a" },
+  "首次果熟": { label: "熟果 ripe fruit", color: "#e8922f" },
+  "果熟盛期": { label: "熟果 ripe fruit", color: "#e8922f" },
+  "果熟間期": { label: "熟果 ripe fruit", color: "#e8922f" },
+  "葉片變色50%": { label: "變色葉 senescing leaf", color: "#b0a12f" },
+  "落葉50%": { label: "落葉 leaf fall", color: "#9c6b3f" },
+  "葉片全部凋萎": { label: "凋萎 withered", color: "#8a8f98" },
+};
+// Legend order = the order traits first appear above.
+const PHENO_TRAIT_ORDER = [...new Set(Object.values(PHENO_TRAIT).map(t => t.label))];
+
+// Deterministic ±jitter in [-0.34, 0.34] so a point keeps its x on every reload.
+function jitterX(seed) {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) | 0;
+  return ((h >>> 0) % 1000 / 1000 - 0.5) * 0.68;
+}
+
+async function loadPhenoScatter() {
+  const d = await getJSON("/api/pheno_scatter?species=" + encodeURIComponent(el("ffd-species").value));
+  const zh = d.zh || "";
+  const years = d.rows.map(r => r.y);
+  const minY = years.length ? Math.min(...years) : 2018;
+  const maxY = years.length ? Math.max(...years) : 2025;
+  const monthDOY = [1, 32, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335];
+  // Bucket the flat rows into one scatter series per trait label.
+  const buckets = new Map(PHENO_TRAIT_ORDER.map(l => [l, []]));
+  d.rows.forEach(r => {
+    const t = PHENO_TRAIT[r.raw];
+    if (!t) return;
+    const x = r.y + jitterX(`${r.tree_id}|${r.d}|${r.raw}`);
+    buckets.get(t.label).push({ value: [x, r.doy], d: r.d, tree_id: r.tree_id, raw: r.raw, year: r.y });
+  });
+  const series = PHENO_TRAIT_ORDER.map(label => ({
+    name: label, type: "scatter", symbolSize: 8,
+    itemStyle: { color: Object.values(PHENO_TRAIT).find(t => t.label === label).color, opacity: 0.62 },
+    data: buckets.get(label),
+  }));
+  chart("chart-pheno-scatter").setOption({
+    title: {
+      text: `${zh ? zh + " " : ""}${d.species} — DOY × Year 物候散布`,
+      left: "center", textStyle: { fontSize: 13 },
+    },
+    tooltip: {
+      trigger: "item",
+      formatter: p => {
+        const o = p.data;
+        return `${zh ? "樹種: " + zh + "<br>" : ""}學名: ${d.species}<br>` +
+          `個體: ${o.tree_id || "—"}<br>日期: ${o.d}<br>Year: ${o.year}<br>` +
+          `DOY: ${o.value[1]}<br>Trait: ${p.seriesName}<br>原始值: ${o.raw}`;
+      },
+    },
+    legend: { bottom: 0, type: "scroll", data: PHENO_TRAIT_ORDER },
+    grid: { left: 66, right: 25, top: 44, bottom: 56 },
+    xAxis: {
+      type: "value", name: "年 Year", nameLocation: "middle", nameGap: 26,
+      min: minY - 0.5, max: maxY + 0.5, interval: 1,
+      axisLabel: { formatter: v => String(Math.round(v)) },
+      splitLine: { show: true },
+    },
+    yAxis: {
+      type: "value", name: "Day of year (DOY)", min: 1, max: 366,
+      splitLine: { show: true },
+      axisLabel: {
+        formatter: v => {
+          const m = monthDOY.findIndex((d2, i) => v >= d2 && (i === 11 || v < monthDOY[i + 1]));
+          return m >= 0 && monthDOY[m] === v ? `${v} (${m + 1}月)` : v;
+        },
+      },
+    },
+    series,
+  }, true);
 }
 
 // §7 熱帶 vs 溫帶 — group monthly avg leaf-cover (solid) + flower rate (dashed).

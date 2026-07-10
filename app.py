@@ -378,6 +378,33 @@ def api_ffd():
     return jsonify({"species": species, "rows": rows})
 
 
+@app.route("/api/pheno_scatter")
+def api_pheno_scatter():
+    """§6 DOY × Year scatter — every phenophase observation for one species as a
+    (year, day-of-year) point tagged with its raw phenophase value, so the full
+    annual rhythm and its year-to-year spread are visible (companion to the FFD
+    line, which shows only the single earliest open-flower day). Default 山櫻花.
+
+    Emits one point per *active* (non-'無') flower / fruit / leaf annotation, so an
+    observation carrying several phenophases contributes several points. The client
+    maps each raw value to a display "trait" + colour.
+    """
+    species = request.args.get("species") or "Prunus campanulata"
+    parts, params = [], []
+    for grp, col in (("flower", "annotation_flower"),
+                     ("fruit", "annotation_fruit"),
+                     ("leaf", "annotation_leaf")):
+        parts.append(
+            f"SELECT year(observed_at) AS y, dayofyear(observed_at) AS doy, "
+            f"strftime(observed_at, '%Y-%m-%d') AS d, tree_id, '{grp}' AS grp, "
+            f"{col} AS raw FROM phenology WHERE observed_at >= ? AND scientific_name = ? "
+            f"AND {col} IS NOT NULL AND {col} <> '無'"
+        )
+        params += [MIN_DATE, species]
+    rows = query(" UNION ALL ".join(parts) + " ORDER BY y, doy", params)
+    return jsonify({"species": species, "zh": COMMON_NAMES.get(species, ""), "rows": rows})
+
+
 @app.route("/api/group_seasonality")
 def api_group_seasonality():
     """§7 熱帶 vs 溫帶 — per group, per month-of-year: average leaf-cover % (banded
