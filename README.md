@@ -1,5 +1,7 @@
 # NTM Phenology charts
 
+[中文介紹 (繁體中文)](README.zh-TW.md)
+
 A small Flask website that visualizes the NTM phenology dataset
 (`ntmPhenology.duckdb`, table `phenology`) — iNaturalist monitoring at two Taipei
 parks (二二八公園 / 228 Park, 南門園區 / Nanmen), 248 species, 2018–2025, with
